@@ -172,54 +172,16 @@ class MainActivity : Activity() {
         }
     }
 
-    fun showCookiePasteDialog(
-        provider: String,
-        title: String,
-        helpText: String,
-        cookieHint: String,
-        onCookieSubmit: (String) -> Unit
-    ) {
-        val input = android.widget.EditText(this).apply {
-            hint = cookieHint
-            maxLines = 6
-            setHorizontallyScrolling(false)
-            setPadding(48, 32, 48, 32)
-            textSize = 13f
-            setBackgroundColor(Color.parseColor("#1A1A2E"))
-            setTextColor(Color.WHITE)
-            setHintTextColor(Color.GRAY)
+    // 登录回调：LoginActivity 成功抓取 Cookie 后通知前端
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == MineradioJSBridge.REQUEST_LOGIN && resultCode == Activity.RESULT_OK) {
+            webView?.postDelayed({
+                webView?.evaluateJavascript(
+                    "if(typeof onLoginSuccess==='function')onLoginSuccess()", null
+                )
+            }, 500)
         }
-
-        // 自动检测剪贴板内容
-        try {
-            val clipboard = getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
-            val clip = clipboard.primaryClip
-            if (clip != null && clip.itemCount > 0) {
-                val pasted = clip.getItemAt(0).text?.toString() ?: ""
-                if (pasted.contains("MUSIC_U") || pasted.contains("qm_keyst") || pasted.contains("uin=")) {
-                    input.setText(pasted)
-                    input.setSelection(pasted.length)
-                }
-            }
-        } catch (_: Exception) {}
-
-        val dialog = android.app.AlertDialog.Builder(this)
-            .setTitle(title)
-            .setMessage(helpText)
-            .setView(input)
-            .setPositiveButton("登录") { _, _ ->
-                val cookie = input.text.toString().trim()
-                if (cookie.isNotEmpty()) {
-                    onCookieSubmit(cookie)
-                }
-            }
-            .setNegativeButton("取消", null)
-            .create()
-
-        dialog.show()
-
-        // 深色主题
-        dialog.window?.setBackgroundDrawableResource(android.R.color.black)
     }
 
     override fun onResume() {

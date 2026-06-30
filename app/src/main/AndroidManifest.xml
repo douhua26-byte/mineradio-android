@@ -43,6 +43,13 @@
             </intent-filter>
         </activity>
 
+        <!-- 登录页面 -->
+        <activity
+            android:name=".LoginActivity"
+            android:configChanges="orientation|screenSize"
+            android:exported="false"
+            android:theme="@style/Theme.Mineradio" />
+
         <!-- 后台播放服务（暂未实现，后续添加） -->
 
     </application>
