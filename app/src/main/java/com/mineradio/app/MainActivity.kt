@@ -172,13 +172,54 @@ class MainActivity : Activity() {
         }
     }
 
-    fun openLoginWebView(provider: String) {
-        val url = when (provider) {
-            "netease" -> "https://music.163.com/#/login"
-            "qq" -> "https://y.qq.com/n/ryqq/profile"
-            else -> return
+    fun showCookiePasteDialog(
+        provider: String,
+        title: String,
+        helpText: String,
+        cookieHint: String,
+        onCookieSubmit: (String) -> Unit
+    ) {
+        val input = android.widget.EditText(this).apply {
+            hint = cookieHint
+            maxLines = 6
+            setHorizontallyScrolling(false)
+            setPadding(48, 32, 48, 32)
+            textSize = 13f
+            setBackgroundColor(Color.parseColor("#1A1A2E"))
+            setTextColor(Color.WHITE)
+            setHintTextColor(Color.GRAY)
         }
-        try { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) } catch (_: Exception) {}
+
+        // 自动检测剪贴板内容
+        try {
+            val clipboard = getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+            val clip = clipboard.primaryClip
+            if (clip != null && clip.itemCount > 0) {
+                val pasted = clip.getItemAt(0).text?.toString() ?: ""
+                if (pasted.contains("MUSIC_U") || pasted.contains("qm_keyst") || pasted.contains("uin=")) {
+                    input.setText(pasted)
+                    input.setSelection(pasted.length)
+                }
+            }
+        } catch (_: Exception) {}
+
+        val dialog = android.app.AlertDialog.Builder(this)
+            .setTitle(title)
+            .setMessage(helpText)
+            .setView(input)
+            .setPositiveButton("登录") { _, _ ->
+                val cookie = input.text.toString().trim()
+                if (cookie.isNotEmpty()) {
+                    onCookieSubmit(cookie)
+                }
+            }
+            .setNegativeButton("取消", null)
+            .create()
+
+        dialog.show()
+
+        // 深色主题
+        dialog.window?.setBackgroundDrawableResource(android.R.color.black)
     }
 
     override fun onResume() {

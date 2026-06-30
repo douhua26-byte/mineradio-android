@@ -7,6 +7,10 @@ import com.mineradio.app.player.AudioPlayerManager
 import com.mineradio.app.util.CookieManager
 import com.mineradio.app.stats.StatsRepository
 import com.mineradio.app.util.PreferencesHelper
+import kotlinx.coroutines.*
+import okhttp3.*
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.RequestBody.Companion.toRequestBody
 
 /**
  * JavaScript ↔ Native 桥接
@@ -20,6 +24,8 @@ class MineradioJSBridge(
     }
 
     private val gson = Gson()
+    private val okHttpClient = OkHttpClient()
+    private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
     // ==================== 音频控制 ====================
 
@@ -163,19 +169,88 @@ class MineradioJSBridge(
         return gson.toJson(stats)
     }
 
-    // ==================== 登录相关 ====================
+    // ==================== 登录 - Cookie 粘贴 ====================
 
     @JavascriptInterface
     fun openNeteaseLogin() {
         activity.runOnUiThread {
-            activity.openLoginWebView("netease")
+            activity.showCookiePasteDialog(
+                provider = "netease",
+                title = "网易云音乐登录",
+                helpText = """电脑浏览器打开 music.163.com → F12 → Application → Cookies
+找到 MUSIC_U，复制整段 Cookie 粘贴到下面：""",
+                cookieHint = "MUSIC_U=xxx; __csrf=xxx; ...",
+                onCookieSubmit = { cookie ->
+                    submitCookieToServer("netease", cookie)
+                }
+            )
         }
     }
 
     @JavascriptInterface
     fun openQQMusicLogin() {
         activity.runOnUiThread {
-            activity.openLoginWebView("qq")
+            activity.showCookiePasteDialog(
+                provider = "qq",
+                title = "QQ 音乐登录",
+                helpText = """电脑浏览器打开 y.qq.com → F12 → Application → Cookies
+找到 uin 和 qm_keyst，复制整段 Cookie 粘贴到下面：""",
+                cookieHint = "uin=xxx; qm_keyst=xxx; ...",
+                onCookieSubmit = { cookie ->
+                    submitCookieToServer("qq", cookie)
+                }
+            )
+        }
+    }
+
+    /**
+     * 将 Cookie 提交到 Ktor 本地服务器
+     */
+    private fun submitCookieToServer(provider: String, cookie: String) {
+        scope.launch {
+            try {
+                val endpoint = if (provider == "netease") {
+                    "/api/login/cookie"
+                } else {
+                    "/api/qq/login/cookie"
+                }
+
+                val json = """{"cookie":"${cookie.replace("\"", "\\\"")}"}"""
+                val body = json.toRequestBody("application/json".toMediaType())
+
+                val request = Request.Builder()
+                    .url("http://127.0.0.1:3000$endpoint")
+                    .post(body)
+                    .build()
+
+                val response = okHttpClient.newCall(request).execute()
+                val responseBody = response.body?.string() ?: "{}"
+                val result = gson.fromJson(responseBody, Map::class.java) as? Map<*, *>
+
+                val loggedIn = result?.get("loggedIn") as? Boolean ?: false
+
+                activity.runOnUiThread {
+                    if (loggedIn) {
+                        val nickname = result?.get("nickname")?.toString() ?: ""
+                        val msg = if (nickname.isNotEmpty()) "登录成功：$nickname" else "登录成功！"
+                        android.widget.Toast.makeText(activity, msg, android.widget.Toast.LENGTH_SHORT).show()
+                        // 通知前端刷新登录状态
+                        activity.webView?.evaluateJavascript(
+                            "if(typeof onLoginSuccess==='function')onLoginSuccess('$provider')", null
+                        )
+                    } else {
+                        val error = result?.get("message")?.toString()
+                            ?: result?.get("error")?.toString()
+                            ?: "登录失败，请检查 Cookie 是否正确"
+                        android.widget.Toast.makeText(activity, error, android.widget.Toast.LENGTH_LONG).show()
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Cookie submit failed: ${e.message}")
+                activity.runOnUiThread {
+                    android.widget.Toast.makeText(activity, "网络错误：${e.message}", android.widget.Toast.LENGTH_LONG).show()
+                }
+            }
         }
     }
 
